@@ -25,8 +25,6 @@ fn receive_packet(interface: &NetworkInterface) -> Result<(), String> {
             )
         })?;
 
-//    thread::spawn(move || {});
-
     Ok(())
 
     // ?演算子はResult型に適用されてOk(T)ならunwrapした値を返す
