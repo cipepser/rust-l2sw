@@ -1,7 +1,7 @@
 extern crate pnet;
 
 use std::collections::HashSet;
-//use std::thread;
+use std::thread;
 use pnet::datalink::{self, NetworkInterface};
 use pnet::datalink::Channel;
 use pnet::datalink::Channel::Ethernet;
@@ -14,16 +14,19 @@ use pnet::datalink::Channel::Ethernet;
 fn receive_packet(interface: &NetworkInterface) -> Result<(), String> {
     println!("name: {:?}", interface.name);
 
-//    let (_tx, rx) = datalink::channel(&interface, Default::default())
-//        .map(|chan| match chan {
-//            Ethernet(_tx, rx) => ((), rx),
-//            _ => panic!("Unhandled channel type"),
-//        });
-//        .map_err(|e| {
-//            format!("An error occurred when creating the datalink channel: {}",
-//                    e.to_string()
-//            )
-//        });
+    let rx = datalink::channel(&interface, Default::default())
+        .map(|chan| match chan {
+            Ethernet(_, rx) => rx,
+            _ => panic!("Unhandled channel type"),
+        })
+        .map_err(|e| {
+            format!("An error occurred when creating the datalink channel: {}",
+                    e.to_string()
+            )
+        })?;
+
+//    thread::spawn(move || {});
+
     Ok(())
 
     // ?演算子はResult型に適用されてOk(T)ならunwrapした値を返す
@@ -59,21 +62,21 @@ fn main() {
 //     }
 // TODO: まずはここでパケットキャプチャを並列にできるようにする
 // datalink::channelで(rx, tx)のパケットキャプチャ？
-// 各I/Fをどうやって扱うか
-// let (mut tx, mut rx) = datalink::channel()
-// Resultを返すようにして、関数化したほうがいいかも。
-//    interfaces
-//        .into_iter()
-//        .map(|iface: NetworkInterface| recieve_packet(&iface));
+    let handles: Vec<_> = interfaces
+        .into_iter()
+        .map(|interface| {
+            thread::spawn(move || {
+                match receive_packet(&interface) {
+                    Ok(_chan) => println!("ok in main"),
+                    Err(e) => panic!(e),
+                };
+            })
+        })
+        .collect();
 
-    for iface in interfaces {
-//        receive_packet(&iface);
-        match receive_packet(&iface) {
-            Ok(_chan) => println!("ok in main"),
-            Err(e) => panic!(e),
-        }
+    for h in handles {
+        h.join().unwrap();
     }
-
 
 // tx: バッファからパケットを取り出して送信？
 //     これを実現しようとするとblockが起きる？
