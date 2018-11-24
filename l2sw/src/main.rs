@@ -43,15 +43,12 @@ fn receive_packet(interface: &NetworkInterface) -> Result<(), String> {
 //                handle_packet(&interface, &packet);
             }
             Err(err) => {
-                println!("{}", err);
-//                error!("failed to read next packet {}, ignore and continue.", err);
+                println!("failed to read next packet {}, ignore and continue.", err);
                 continue;
             }
         }
     }
 
-    // ?演算子はResult型に適用されてOk(T)ならunwrapした値を返す
-    // Err(E)なら関数からErr(e)を返して抜ける
     Ok(())
 }
 
@@ -82,8 +79,6 @@ fn main() {
 //     None => {
 //         packet
 //     }
-// TODO: まずはここでパケットキャプチャを~並列に~できるようにする
-// datalink::channelで(rx, tx)のパケットキャプチャ？
     let handles: Vec<_> = interfaces
         .into_iter()
         .map(|interface| {
