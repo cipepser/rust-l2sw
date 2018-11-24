@@ -5,16 +5,15 @@ use std::thread;
 use pnet::datalink::{self, NetworkInterface};
 use pnet::datalink::Channel;
 use pnet::datalink::Channel::Ethernet;
+use pnet::packet::ethernet::EthernetPacket;
 
 // この関数の責務が明確化されていないから詰まっている気がする
 // interfaceを受け取って、channelでrxを作る
-// このrxをthreadで分けて、loopを回す
-// 返り値は？
 //fn receive_packet(interface: &NetworkInterface) {
 fn receive_packet(interface: &NetworkInterface) -> Result<(), String> {
     println!("name: {:?}", interface.name);
 
-    let rx = datalink::channel(&interface, Default::default())
+    let mut rx = datalink::channel(&interface, Default::default())
         .map(|chan| match chan {
             Ethernet(_, rx) => rx,
             _ => panic!("Unhandled channel type"),
@@ -25,10 +24,35 @@ fn receive_packet(interface: &NetworkInterface) -> Result<(), String> {
             )
         })?;
 
-    Ok(())
+    loop {
+        let next_packet = rx.next()
+            .map_err(|e| format!("An error occurred when read next packet: {}", e.to_string()))
+            .and_then(|packet| {
+                EthernetPacket::new(packet).ok_or("failed to parse ethernet packet".to_string())
+            });
+
+        match next_packet {
+            Ok(packet) => {
+                println!(
+                    "{}: {} -> {}",
+                    interface.name,
+//                    packet.get_ethertype(),
+                    packet.get_source(),
+                    packet.get_destination()
+                );
+//                handle_packet(&interface, &packet);
+            }
+            Err(err) => {
+                println!("{}", err);
+//                error!("failed to read next packet {}, ignore and continue.", err);
+                continue;
+            }
+        }
+    }
 
     // ?演算子はResult型に適用されてOk(T)ならunwrapした値を返す
     // Err(E)なら関数からErr(e)を返して抜ける
+    Ok(())
 }
 
 fn main() {
@@ -58,7 +82,7 @@ fn main() {
 //     None => {
 //         packet
 //     }
-// TODO: まずはここでパケットキャプチャを並列にできるようにする
+// TODO: まずはここでパケットキャプチャを~並列に~できるようにする
 // datalink::channelで(rx, tx)のパケットキャプチャ？
     let handles: Vec<_> = interfaces
         .into_iter()
