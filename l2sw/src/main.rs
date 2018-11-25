@@ -1,15 +1,14 @@
 extern crate pnet;
 
-use std::collections::HashSet;
+use std::collections::{HashSet, HashMap};
 use std::thread;
+use std::sync::Mutex;
+use std::time::Duration;
 use pnet::datalink::{self, NetworkInterface};
-use pnet::datalink::Channel;
 use pnet::datalink::Channel::Ethernet;
 use pnet::packet::ethernet::EthernetPacket;
+use pnet::util;
 
-// この関数の責務が明確化されていないから詰まっている気がする
-// interfaceを受け取って、channelでrxを作る
-//fn receive_packet(interface: &NetworkInterface) {
 fn receive_packet(interface: &NetworkInterface) -> Result<(), String> {
     println!("name: {:?}", interface.name);
 
@@ -49,7 +48,12 @@ fn receive_packet(interface: &NetworkInterface) -> Result<(), String> {
         }
     }
 
-    Ok(())
+//    Ok(())
+}
+
+struct MacAddressRecord {
+    device_no: i32,
+    last_time: Duration,
 }
 
 fn main() {
@@ -62,23 +66,14 @@ fn main() {
         .filter(|iface: &NetworkInterface| interface_names.contains(iface.name.as_str()))
         .collect();
 
-// MACアドレステーブル作成
-// key: MACアドレス
-// device No.
-// lastTime
+    let MacAddressTable: HashMap<util::MacAddr, Mutex<MacAddressRecord>> = HashMap::new();
 
-// 送信用のバッファを初期化
-// - どのI/Fのtxに送るのか
 
-// rx: パケットの受信を行う。
-//     受信したらARPテーブル更新？
-//     各I/Fは独立してrxで受信するパケットを監視する
-//     MACアドレステーブルから、OptionでMACアドレスを取得して、
-//     Some()とNoneで挙動を変える
-//     Some(packet) =>
-//     None => {
-//         packet
-//     }
+    // 送信用のバッファを初期化
+    // - どのI/Fのtxに送るのか
+
+
+// TODO: 受信したらARPテーブル更新
     let handles: Vec<_> = interfaces
         .into_iter()
         .map(|interface| {
@@ -97,8 +92,6 @@ fn main() {
 
 // tx: バッファからパケットを取り出して送信？
 //     これを実現しようとするとblockが起きる？
-//     MACアドレステーブルに
-
 
 // 各テーブルのaging timerをいつ更新するか
 // ⇛学習したタイミングでlastTimeを更新する
