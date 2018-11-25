@@ -2,14 +2,14 @@ extern crate pnet;
 
 use std::collections::{HashSet, HashMap};
 use std::thread;
-use std::sync::Mutex;
+use std::sync::{Mutex, Arc};
 use std::time::Duration;
 use pnet::datalink::{self, NetworkInterface};
 use pnet::datalink::Channel::Ethernet;
 use pnet::packet::ethernet::EthernetPacket;
-use pnet::util;
+//use pnet::util;
 
-fn receive_packet(interface: &NetworkInterface) -> Result<(), String> {
+fn receive_packet(interface: &NetworkInterface, mac_address_table: &mut HashMap<pnet::datalink::MacAddr, MacAddressRecord>) -> Result<(), String> {
     println!("name: {:?}", interface.name);
 
     let mut rx = datalink::channel(&interface, Default::default())
@@ -32,14 +32,18 @@ fn receive_packet(interface: &NetworkInterface) -> Result<(), String> {
 
         match next_packet {
             Ok(packet) => {
-                println!(
-                    "{}: {} -> {}",
-                    interface.name,
+//                println!(
+//                    "{}: {} -> {}",
+//                    interface.name,
 //                    packet.get_ethertype(),
-                    packet.get_source(),
-                    packet.get_destination()
-                );
+//                    packet.get_source(),
+//                    packet.get_destination()
+//                );
+//                let _record = mac_address_table[&packet.get_source()].lock(); // .unwrap()が例にはあるけど、Resultで返したい
+                println!("hoge");
+//                update_MacAddressTable(&mut mac_address_table[&packet.get_source()]);
 //                handle_packet(&interface, &packet);
+                println!("{} updated", packet.get_source());
             }
             Err(err) => {
                 println!("failed to read next packet {}, ignore and continue.", err);
@@ -52,9 +56,13 @@ fn receive_packet(interface: &NetworkInterface) -> Result<(), String> {
 }
 
 struct MacAddressRecord {
-    device_no: i32,
+    device_no: u32,
     last_time: Duration,
 }
+
+//fn update_MacAddressTable(_record: &mut Mutex<MacAddressRecord>) {
+//    let record.device_no = 1;
+//}
 
 fn main() {
     let interface_names: HashSet<&str> = vec!["lo0", "en0", "en1"]
@@ -63,22 +71,27 @@ fn main() {
 
     let interfaces: Vec<NetworkInterface> = datalink::interfaces()
         .into_iter()
-        .filter(|iface: &NetworkInterface| interface_names.contains(iface.name.as_str()))
+        .filter(|interface: &NetworkInterface| interface_names.contains(interface.name.as_str()))
         .collect();
 
-    let MacAddressTable: HashMap<util::MacAddr, Mutex<MacAddressRecord>> = HashMap::new();
-
+    let mac_address_table: Arc<Mutex<HashMap<pnet::datalink::MacAddr, MacAddressRecord>>> =
+        Arc::new(Mutex::new(HashMap::new()));
 
     // 送信用のバッファを初期化
     // - どのI/Fのtxに送るのか
 
-
-// TODO: 受信したらARPテーブル更新
+    // TODO: 受信したらMACアドレステーブルを更新
+    // 最初はブロードキャストするだけでいい？
+    // ARP requestを投げる？
     let handles: Vec<_> = interfaces
         .into_iter()
         .map(|interface| {
+            let mut mac_address_table = mac_address_table.clone();
+
             thread::spawn(move || {
-                match receive_packet(&interface) {
+                // TODO: 今のままだとblockしてしまう
+                let mut mac_address_table = mac_address_table.lock().unwrap();
+                match receive_packet(&interface, &mut mac_address_table) {
                     Ok(_chan) => println!("ok in main"),
                     Err(e) => panic!(e),
                 };
@@ -86,14 +99,16 @@ fn main() {
         })
         .collect();
 
+//    let mac_address_table = mac_address_table.clone();
     for h in handles {
+//        let mac_address_table = mac_address_table.clone();
         h.join().unwrap();
     }
 
-// tx: バッファからパケットを取り出して送信？
-//     これを実現しようとするとblockが起きる？
+    // tx: バッファからパケットを取り出して送信？
+    //     これを実現しようとするとblockが起きる？
 
-// 各テーブルのaging timerをいつ更新するか
-// ⇛学習したタイミングでlastTimeを更新する
-// テーブルを調べたときに now > lastTimeでもう一度ブロードキャストするか決める
+    // 各テーブルのaging timerをいつ更新するか
+    // ⇛学習したタイミングでlastTimeを更新する
+    // テーブルを調べたときに now > lastTimeでもう一度ブロードキャストするか決める
 }
