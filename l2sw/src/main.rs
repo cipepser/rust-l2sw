@@ -103,6 +103,7 @@ fn main() {
                 // TODO: 今のままだと、loopの外でlockを取っているのでunlockされず、blockしてしまう
                 // receive_packet()の返り値をResult<MacAddressRecord, String>にすることでlockを取らなくてよくできないか？
                 // rxのloopとの切り離しが設計できていないからちょっと厳しそう
+                // rxの取得自体はマルチスレッドにする必要はない
                 let mut mac_address_table = mac_address_table.lock().unwrap();
                 match receive_packet(&interface, &mut mac_address_table) {
 //                match receive_packet(&interface) {
