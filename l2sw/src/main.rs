@@ -9,7 +9,12 @@ use pnet::datalink::Channel::Ethernet;
 use pnet::packet::ethernet::EthernetPacket;
 //use pnet::util;
 
+// receive_packetの責務が大きすぎる？
+// - interfaceからrxを取得 <- これはテーブルのlockを取る必要がない
+//   ⇛ このあとのことを考えるとchannel(tx, rx)のどちらも持っておきたい
+// - rxを監視して、パケットがあればそれを処理する
 fn receive_packet(interface: &NetworkInterface, mac_address_table: &mut HashMap<pnet::datalink::MacAddr, MacAddressRecord>) -> Result<(), String> {
+//fn receive_packet(interface: &NetworkInterface, ) -> Result<(), String> {
     println!("name: {:?}", interface.name);
 
     let mut rx = datalink::channel(&interface, Default::default())
@@ -32,18 +37,21 @@ fn receive_packet(interface: &NetworkInterface, mac_address_table: &mut HashMap<
 
         match next_packet {
             Ok(packet) => {
-//                println!(
-//                    "{}: {} -> {}",
-//                    interface.name,
+                println!(
+                    "{}: {} -> {}",
+                    interface.name,
 //                    packet.get_ethertype(),
-//                    packet.get_source(),
-//                    packet.get_destination()
-//                );
+                    packet.get_source(),
+                    packet.get_destination(),
+                );
+                // TODO: ここで初めてRecordに対するlockを取りたい
+                // ⇛ receive_packetの引数にmac_address_tableがあることが設計が間違っている？
+                // MacAddressTable型に対して`update`とかを呼び出すべきでは？
+                // でもこの関数内ではMacAddressTableのことを知らないので、どうにかして知る必要がある
 //                let _record = mac_address_table[&packet.get_source()].lock(); // .unwrap()が例にはあるけど、Resultで返したい
-                println!("hoge");
 //                update_MacAddressTable(&mut mac_address_table[&packet.get_source()]);
 //                handle_packet(&interface, &packet);
-                println!("{} updated", packet.get_source());
+//                println!("{} updated", packet.get_source());
             }
             Err(err) => {
                 println!("failed to read next packet {}, ignore and continue.", err);
@@ -57,15 +65,18 @@ fn receive_packet(interface: &NetworkInterface, mac_address_table: &mut HashMap<
 
 struct MacAddressRecord {
     device_no: u32,
-    last_time: Duration,
+//    last_time: Duration,
 }
 
-//fn update_MacAddressTable(_record: &mut Mutex<MacAddressRecord>) {
-//    let record.device_no = 1;
-//}
+impl MacAddressRecord {
+    fn update_divice_no(&mut self, device_no: u32) {
+        self.device_no = device_no;
+    }
+}
 
 fn main() {
     let interface_names: HashSet<&str> = vec!["lo0", "en0", "en1"]
+//    let interface_names: HashSet<&str> = vec!["en0"]
         .into_iter()
         .collect();
 
@@ -89,10 +100,13 @@ fn main() {
             let mut mac_address_table = mac_address_table.clone();
 
             thread::spawn(move || {
-                // TODO: 今のままだとblockしてしまう
+                // TODO: 今のままだと、loopの外でlockを取っているのでunlockされず、blockしてしまう
+                // receive_packet()の返り値をResult<MacAddressRecord, String>にすることでlockを取らなくてよくできないか？
+                // rxのloopとの切り離しが設計できていないからちょっと厳しそう
                 let mut mac_address_table = mac_address_table.lock().unwrap();
                 match receive_packet(&interface, &mut mac_address_table) {
-                    Ok(_chan) => println!("ok in main"),
+//                match receive_packet(&interface) {
+                    Ok(_record) => println!("ok in main"),
                     Err(e) => panic!(e),
                 };
             })
