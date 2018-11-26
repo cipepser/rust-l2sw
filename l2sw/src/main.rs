@@ -4,7 +4,9 @@ use std::collections::{HashSet, HashMap};
 use std::thread;
 use std::sync::{Mutex, Arc};
 use std::time::Duration;
+use std::io;
 use pnet::datalink::{self, NetworkInterface};
+use pnet::datalink::Channel;
 use pnet::datalink::Channel::Ethernet;
 use pnet::packet::ethernet::EthernetPacket;
 //use pnet::util;
@@ -85,45 +87,71 @@ fn main() {
         .filter(|interface: &NetworkInterface| interface_names.contains(interface.name.as_str()))
         .collect();
 
+    // TODO: Arc(Mutex())するのをMacAddressRecordごとにしたい
     let mac_address_table: Arc<Mutex<HashMap<pnet::datalink::MacAddr, MacAddressRecord>>> =
         Arc::new(Mutex::new(HashMap::new()));
+
+//    let mut channels: Vec<Result<Channel, String>> = interfaces
+//        .into_iter()
+//        .map(|interface|
+//            datalink::channel(&interface, Default::default())
+//                .map_err(|e| {
+//                    format!("An error occurred when creating the datalink channel: {}",
+//                            e.to_string()
+//                    )
+//                })
+//        )
+//        .collect();
+
+    let mut channels: Vec<Channel> = interfaces
+        .into_iter()
+        .map(|interface|
+    let chan = match datalink::channel(&interface,
+                                       Default::default())
+        {
+            Ok(chan) => chan,
+            Err(err) => println!("An error occured when creating channel but ignore: {}", err),
+        };
+    )
+    .collect();
 
     // 送信用のバッファを初期化
     // - どのI/Fのtxに送るのか
 
-    // TODO: 受信したらMACアドレステーブルを更新
-    // 最初はブロードキャストするだけでいい？
-    // ARP requestを投げる？
-    let handles: Vec<_> = interfaces
-        .into_iter()
-        .map(|interface| {
-            let mut mac_address_table = mac_address_table.clone();
 
-            thread::spawn(move || {
-                // TODO: 今のままだと、loopの外でlockを取っているのでunlockされず、blockしてしまう
-                // receive_packet()の返り値をResult<MacAddressRecord, String>にすることでlockを取らなくてよくできないか？
-                // rxのloopとの切り離しが設計できていないからちょっと厳しそう
-                // rxの取得自体はマルチスレッドにする必要はない
-                let mut mac_address_table = mac_address_table.lock().unwrap();
-                match receive_packet(&interface, &mut mac_address_table) {
-//                match receive_packet(&interface) {
-                    Ok(_record) => println!("ok in main"),
-                    Err(e) => panic!(e),
-                };
-            })
-        })
-        .collect();
-
-//    let mac_address_table = mac_address_table.clone();
-    for h in handles {
-//        let mac_address_table = mac_address_table.clone();
-        h.join().unwrap();
-    }
-
-    // tx: バッファからパケットを取り出して送信？
-    //     これを実現しようとするとblockが起きる？
-
-    // 各テーブルのaging timerをいつ更新するか
-    // ⇛学習したタイミングでlastTimeを更新する
-    // テーブルを調べたときに now > lastTimeでもう一度ブロードキャストするか決める
+//    // TODO: 受信したらMACアドレステーブルを更新
+//    // 最初はブロードキャストするだけでいい？
+//    // ARP requestを投げる？
+//    let handles: Vec<_> = interfaces
+//        .into_iter()
+//        .map(|interface| {
+//            let mut mac_address_table = mac_address_table.clone();
+//
+//            thread::spawn(move || {
+//                // TODO: 今のままだと、loopの外でlockを取っているのでunlockされず、blockしてしまう
+//                // receive_packet()の返り値をResult<MacAddressRecord, String>にすることでlockを取らなくてよくできないか？
+//                // rxのloopとの切り離しが設計できていないからちょっと厳しそう
+//                // rxの取得自体はマルチスレッドにする必要はない
+//                let mut mac_address_table = mac_address_table.lock().unwrap();
+//                match receive_packet(&interface, &mut mac_address_table) {
+////                match receive_packet(&interface) {
+//                    Ok(_record) => println!("ok in main"),
+//                    Err(e) => panic!(e),
+//                };
+//            })
+//        })
+//        .collect();
+//
+////    let mac_address_table = mac_address_table.clone();
+//    for h in handles {
+////        let mac_address_table = mac_address_table.clone();
+//        h.join().unwrap();
+//    }
+//
+//    // tx: バッファからパケットを取り出して送信？
+//    //     これを実現しようとするとblockが起きる？
+//
+//    // 各テーブルのaging timerをいつ更新するか
+//    // ⇛学習したタイミングでlastTimeを更新する
+//    // テーブルを調べたときに now > lastTimeでもう一度ブロードキャストするか決める
 }
