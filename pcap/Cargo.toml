@@ -1,0 +1,11 @@
+[package]
+name = "pcap"
+version = "0.1.0"
+authors = ["cipepser <respepic@gmail.com>"]
+
+[dependencies]
+serde = "1.0"
+serde_derive = "1.0"
+
+[dependencies.pnet]
+version = "0.21.0"
