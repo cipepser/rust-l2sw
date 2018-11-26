@@ -1,6 +1,6 @@
 extern crate pnet;
 
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 use std::thread;
 use pnet::datalink::{self, NetworkInterface};
 use pnet::datalink::Channel::Ethernet;
@@ -10,8 +10,7 @@ use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::{Packet, arp, tcp, udp};
 
 // TODO: 並列処理しているので標準出力の整合性がとれていない
-// queueにpushするのがよさそう
-fn receive_packet(interface: &NetworkInterface, rx: &mut Box<datalink::DataLinkReceiver>) -> Result<(), String> {
+fn receive_packet(queue: &mut VecDeque<PacketWithInterface>, interface: &NetworkInterface, rx: &mut Box<datalink::DataLinkReceiver>) -> Result<(), String> {
     loop {
         let next_packet = rx.next()
             .map_err(|e| format!("An error occurred when read next packet: {}", e.to_string()))
@@ -21,13 +20,34 @@ fn receive_packet(interface: &NetworkInterface, rx: &mut Box<datalink::DataLinkR
 
         match next_packet {
             Ok(ethernet) => {
-                handle_ethernet_packet(&interface, &ethernet);
+                queue.push_back(
+                    PacketWithInterface {
+                        interface: interface.clone(),
+                        // TODO: EthernetPacketにclone()が実装されていない
+                        packet: ethernet,
+                    }
+                );
             }
             Err(err) => {
                 println!("failed to read next packet {}, ignore and continue.", err);
                 continue;
             }
         }
+    }
+}
+
+struct PacketWithInterface<'p> {
+    interface: NetworkInterface,
+    packet: EthernetPacket<'p>,
+}
+
+// queueから取り出したpacketを処理する
+fn handle_packet(queue: &mut VecDeque<PacketWithInterface>, packet: &PacketWithInterface){
+    let packet = queue.pop_front();
+    // TODO: mapにしたい
+    match packet {
+        Some(packet) => handle_ethernet_packet(&packet.interface, &packet.packet),
+        None => (),
     }
 }
 
@@ -85,7 +105,6 @@ fn handle_ip_packet(interface: &NetworkInterface, ip: &Ipv4Packet) {
         }
         _ => (),
     }
-
 }
 
 fn handle_tcp_packet(_interface: &NetworkInterface, tcp: &tcp::TcpPacket) {
@@ -107,7 +126,9 @@ fn main() {
         .filter(|interface: &NetworkInterface| interface_names.contains(interface.name.as_str()))
         .collect();
 
-    let handles: Vec<_> = interfaces.into_iter()
+    let mut queue: VecDeque<PacketWithInterface> = VecDeque::new();
+
+    let mut handles: Vec<_> = interfaces.into_iter()
         .map(|interface|
             thread::spawn(move || {
                 let rx = datalink::channel(&interface, Default::default())
@@ -115,13 +136,25 @@ fn main() {
                         Ethernet(_, rx) => rx,
                         _ => panic!("could not initialize datalink channel {:?}", interface.name),
                     });
-                match receive_packet(&interface, &mut rx.unwrap()) {
+                // TODO: get locking the queue
+                match receive_packet(&mut queue, &interface, &mut rx.unwrap()) {
                     Ok(_) => (),
                     Err(e) => panic!("{}", e.to_string()),
                 };
             })
         )
         .collect();
+
+    handles.push(
+        thread::spawn(move || {
+            loop {
+                // TODO: get locking the queue
+                // let _queue = // scopeを抜けたらunlockさせる
+                queue.pop_front()
+                    .map(|packet| handle_packet(&mut queue, &packet));
+            }
+        })
+    );
 
     for h in handles {
         h.join().unwrap();
