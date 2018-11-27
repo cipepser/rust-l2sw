@@ -23,8 +23,7 @@ fn receive_packet(queue: &mut VecDeque<PacketWithInterface>, interface: &Network
                 queue.push_back(
                     PacketWithInterface {
                         interface: interface.clone(),
-                        // TODO: EthernetPacketにclone()が実装されていない
-                        packet: ethernet,
+                        packet: ethernet.to_immutable(),
                     }
                 );
             }
@@ -42,7 +41,7 @@ struct PacketWithInterface<'p> {
 }
 
 // queueから取り出したpacketを処理する
-fn handle_packet(queue: &mut VecDeque<PacketWithInterface>, packet: &PacketWithInterface){
+fn handle_packet(queue: &mut VecDeque<PacketWithInterface>, packet: &PacketWithInterface) {
     let packet = queue.pop_front();
     // TODO: mapにしたい
     match packet {
@@ -113,7 +112,6 @@ fn handle_tcp_packet(_interface: &NetworkInterface, tcp: &tcp::TcpPacket) {
 
 fn handle_udp_packet(_interface: &NetworkInterface, udp: &udp::UdpPacket) {
     println!("{} -> {}", udp.get_source(), udp.get_destination());
-
 }
 
 fn main() {
