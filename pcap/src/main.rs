@@ -10,7 +10,7 @@ use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::{Packet, arp, tcp, udp};
 
 // TODO: 並列処理しているので標準出力の整合性がとれていない
-fn receive_packet(queue: &mut VecDeque<PacketWithInterface>, interface: &NetworkInterface, rx: &mut Box<datalink::DataLinkReceiver>) -> Result<(), String> {
+fn receive_packet<'a>(queue: &mut VecDeque<PacketWithInterface<'a>>, interface: &NetworkInterface, rx:  &'a mut Box<datalink::DataLinkReceiver + 'a>) -> Result<(), String> {
     loop {
         let next_packet = rx.next()
             .map_err(|e| format!("An error occurred when read next packet: {}", e.to_string()))
@@ -23,7 +23,7 @@ fn receive_packet(queue: &mut VecDeque<PacketWithInterface>, interface: &Network
                 queue.push_back(
                     PacketWithInterface {
                         interface: interface.clone(),
-                        packet: ethernet.to_immutable(),
+                        packet: ethernet,
                     }
                 );
             }
