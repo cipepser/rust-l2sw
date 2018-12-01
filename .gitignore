@@ -3,3 +3,4 @@ Cargo.lock
 .idea/
 tmp*/
 .DS_Store
+Vagrantfile
