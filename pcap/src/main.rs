@@ -11,11 +11,11 @@ use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::{Packet, arp, tcp, udp};
 
 #[derive(Clone, Debug)]
-struct Queue<T: Send + Copy> {
+struct Queue<T: Send> {
     inner: Arc<Mutex<VecDeque<T>>>,
 }
 
-impl <T: Send + Copy>Queue<T> {
+impl<T: Send> Queue<T> {
     fn new() -> Self {
         Self { inner: Arc::new(Mutex::new(VecDeque::new())) }
     }
@@ -40,7 +40,14 @@ impl <T: Send + Copy>Queue<T> {
     }
 }
 
-fn handle_ethernet_packet(interface: &NetworkInterface, ethernet: &EthernetPacket) {
+#[derive(Clone, Debug)]
+struct PacketWithInterface<'a> {
+//struct PacketWithInterface {
+    interface: NetworkInterface,
+    packet: &'a [u8],
+}
+
+fn handle_ethernet_frame(interface: &NetworkInterface, ethernet: &EthernetPacket) {
     println!(
         "{}: {} > {}",
         interface.name,
@@ -114,9 +121,66 @@ fn main() {
         .filter(|interface: &NetworkInterface| interface_names.contains(interface.name.as_str()))
         .collect();
 
-    let queue: Queue<i32> = Queue::new(); // i32はこの時点でコンパイル通すために暫定的にplaceしている
 
+    let queue: Queue<PacketWithInterface> = Queue::new();
 
-    // interfacesをiterateしてrxを監視する（マルチスレッド）
+    // TODO: interfacesをiterateしてrxを監視する（マルチスレッド）
     // packet_handlerもここで一緒にマルチスレッドにしたい
+    let mut handles: Vec<_> = interfaces.into_iter()
+        .map(|interface| {
+            let queue = queue.clone();
+            thread::spawn(move || {
+                let mut rx = datalink::channel(&interface, Default::default())
+                    .map(|chan| match chan {
+                        Ethernet(_, rx) => rx,
+                        _ => panic!("could not initialize datalink channel {:?}", interface.name),
+                    }).unwrap();
+
+                loop {
+                    match rx.next() {
+                        Ok(src) => {
+//                            let mut dst = vec![0; src.len()];
+//                            dst.copy_from_slice(&src);
+//                            println!("{:?}", dst);
+                            queue.add(PacketWithInterface {
+                                interface: interface.clone(),
+                                packet: &[], // TODO: unimplemented
+                            });
+                        }
+                        Err(_) => {
+                            continue;
+                        }
+                    }
+                }
+            })
+        }
+        )
+        .collect();
+
+    handles.push(thread::spawn(move || {
+        loop {
+            let queue = queue.clone();
+            match queue.get() {
+                Some(packet_with_interface) => {
+//                    println!("recieve packet in {:?}", packet_with_interface.interface.name.to_string());
+                    match EthernetPacket::new(packet_with_interface.packet) {
+                        Some(packet) => {
+                            handle_ethernet_frame(&packet_with_interface.interface, &packet);
+                        },
+                        _ => {
+                            continue;
+                        }
+                    }
+                },
+                _ => {
+                    continue;
+                }
+            }
+        }
+    }));
+
+
+    for h in handles {
+        h.join().unwrap();
+    }
 }
