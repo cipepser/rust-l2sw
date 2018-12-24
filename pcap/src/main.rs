@@ -1,8 +1,8 @@
 extern crate pnet;
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashSet};
 use std::thread;
-use std::sync::{Mutex, Arc};
+use std::sync::mpsc;
 use std::ops::Deref;
 use pnet::datalink::{self, NetworkInterface};
 use pnet::datalink::Channel::Ethernet;
@@ -10,36 +10,6 @@ use pnet::packet::ethernet::{EtherTypes, EthernetPacket};
 use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::{Packet, arp, tcp, udp};
-
-#[derive(Clone, Debug)]
-struct Queue<T: Send> {
-    inner: Arc<Mutex<VecDeque<T>>>,
-}
-
-impl<T: Send> Queue<T> {
-    fn new() -> Self {
-        Self { inner: Arc::new(Mutex::new(VecDeque::new())) }
-    }
-
-    fn get(&self) -> Option<T> {
-        let _queue = self.inner.lock();
-        if let Ok(mut queue) = _queue {
-            queue.pop_front()
-        } else {
-            None
-        }
-    }
-
-    fn add(&self, obj: T) -> usize {
-        let _queue = self.inner.lock();
-        if let Ok(mut queue) = _queue {
-            queue.push_back(obj);
-            queue.len()
-        } else {
-            0
-        }
-    }
-}
 
 #[derive(Clone, Debug)]
 struct PacketWithInterface {
@@ -112,7 +82,7 @@ fn handle_udp_packet(_interface: &NetworkInterface, udp: &udp::UdpPacket) {
 }
 
 fn main() {
-    let interface_names: HashSet<&str> = vec!["RT2_veth1", "RT2_veth1"]
+    let interface_names: HashSet<&str> = vec!["lo0", "en0"]
         .into_iter()
         .collect();
 
@@ -121,11 +91,11 @@ fn main() {
         .filter(|interface: &NetworkInterface| interface_names.contains(interface.name.as_str()))
         .collect();
 
-    let queue: Queue<PacketWithInterface> = Queue::new();
+    let (sender, receiver) = mpsc::channel();
 
     let mut handles: Vec<_> = interfaces.into_iter()
         .map(|interface| {
-            let queue = queue.clone();
+            let sender = sender.clone();
             thread::spawn(move || {
                 let mut rx = datalink::channel(&interface, Default::default())
                     .map(|chan| match chan {
@@ -136,10 +106,11 @@ fn main() {
                 loop {
                     match rx.next() {
                         Ok(src) => {
-                            queue.add(PacketWithInterface {
+                            sender.send(PacketWithInterface {
                                 interface: interface.clone(),
                                 packet: src.to_owned(),
-                            });
+                            }).unwrap();
+
                         }
                         Err(_) => {
                             continue;
@@ -153,9 +124,8 @@ fn main() {
 
     handles.push(thread::spawn(move || {
         loop {
-            let queue = queue.clone();
-            match queue.get() {
-                Some(packet_with_interface) => {
+            match receiver.recv() {
+                Ok(packet_with_interface) => {
                     let _packet = packet_with_interface.packet.deref();
                     match EthernetPacket::new(_packet) {
                         Some(packet) => {
